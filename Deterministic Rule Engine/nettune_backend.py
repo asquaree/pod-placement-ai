@@ -541,7 +541,7 @@ class NetTuneBackend:
     def _load_dr_rules(self) -> str:
         """Load DR rules from file."""
         try:
-            with open("vdu_dr_rules.json", "r", encoding="utf-8") as f:
+            with open("vdu_dr_rules.2.json", "r", encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             logger.warning("DR rules file not found")
@@ -584,7 +584,7 @@ class NetTuneBackend:
                     # Try to get vCSR default server config from rules
                     try:
                         from rule_models import DRRulesParser
-                        rules_parser = DRRulesParser("vdu_dr_rules.json")
+                        rules_parser = DRRulesParser("vdu_dr_rules.2.json")
                         vcsr_config = rules_parser.get_vcsr_default_server_config()
                         if vcsr_config:
                             server_configs = [ServerConfiguration(

@@ -43,7 +43,7 @@ class DeploymentValidator:
     Executes all DR rules in proper order and provides comprehensive results.
     """
     
-    def __init__(self, rules_file_path: str = "vdu_dr_rules.json"):
+    def __init__(self, rules_file_path: str = "vdu_dr_rules.2.json"):
         self.rules_parser = DRRulesParser(rules_file_path)
         self.validation_results = {}
         self.socket_assignments = {}

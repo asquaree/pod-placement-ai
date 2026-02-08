@@ -162,7 +162,7 @@ The application requires the following Python packages:
 3. Verify data files are present:
    - `dimension_flavor_25A_25B_26A.csv` - Dimensioning data
    - `pod_flavors_25A_25B_EU_US.csv` - Pod flavor specifications
-   - `vdu_dr_rules.json` - Deterministic rules configuration
+   - `vdu_dr_rules.2.json` - Deterministic rules configuration
 
 4. Run the application:
    ```bash
@@ -515,7 +515,7 @@ Contains detailed pod resource specifications:
 - Hugepage (GB)
 - Persistent Volume (GB)
 
-#### DR Rules (vdu_dr_rules.json)
+#### DR Rules (vdu_dr_rules.2.json)
 JSON configuration file containing all deterministic rules:
 - Capacity calculation rules
 - Placement constraints
@@ -594,7 +594,7 @@ The test suite covers:
 
 #### Rule Validation Failures
 **Problem**: DR rules file missing or invalid
-**Solution**: Verify `vdu_dr_rules.json` exists and is valid JSON
+**Solution**: Verify `vdu_dr_rules.2.json` exists and is valid JSON
 
 #### Capacity Violations
 **Problem**: Deployment rejected due to insufficient resources

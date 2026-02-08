@@ -1,0 +1,5 @@
+Operator,Network Function,Dimensioning Flavor,Package,DPP,DIP,DMP,CMP,PMP,RMP,IPP
+VOS,uADPF,medium-regular-spr-t21,25A,fdd-270m-18c-gsm-6trx-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,medium-regular-spr-t23,25A,medium-regular-spr-t23,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+Verizon,ADPF,medium-tdd-regular-spr,25A,medium-tdd-regular-spr,medium-1.8m-spr,medium-uni,medium-uni,medium-uni,medium-uni,
+VOS,uADPF,small-tdd-6fh-3fhm,25B,small-tdd,tiny,medium,medium,medium,medium,
