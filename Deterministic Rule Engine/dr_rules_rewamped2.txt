@@ -1,0 +1,167 @@
+# vDU Deployment Rules - Clarified and Structured for RAG Pipeline
+
+## CORE CONCEPTS AND DEFINITIONS
+
+### Basic Units
+- **pcore (Physical Core)**: Physical CPU core
+- **vcore (Virtual Core)**: 1 pcore = 2 vcore  
+- **Socket**: NUMA unit - each socket treated as separate server for all rules
+- **Server**: Can have 1 or 2 sockets
+
+### Pod Types
+- **Mandatory vDU Pods**: DPP, DIP, RMP, CMP, DMP, PMP (required for every vDU)
+- **Optional Pods**: vCU, IPP, IIP, UPP, CSP (operator/feature dependent)
+
+### Input Parameters (Must be provided)
+- Server configuration (cores, sockets)
+- Operator type (VOS, Verizon, Boost)
+- Pod vcore requirements for each pod type
+- Feature flags: HA enabled (yes/no), in-service upgrade (yes/no), vDU-RU switch connection (yes/no), DirectX2 required (yes/no)
+- vDU flavor name
+- Number of servers in deployment
+
+---
+
+## CAPACITY CALCULATION RULES
+
+### Rule C1: Server Capacity Formula
+For each server/socket, the following must be satisfied:
+```
+Sum(vcore requests of all pods on server/socket) ≤ (Total vcores on server/socket) - (CaaS vcores) - (Shared vcores)
+```
+
+### Rule C2: Core Conversion
+- Total vcores = Physical cores(pcore) × 2
+- Multi-socket servers: Apply capacity check per socket independently
+
+### Rule C3: CaaS Core Allocation (Per Server/Socket)
+- **VOS Operator**: 4 vcores
+- **Verizon Operator**: 4 vcores  
+- **Boost Operator**: Rules currently incomplete (ignore Boost for now)
+
+### Rule C4: Shared Core Allocation (Per Server/Socket)
+- **Global minimum**: 1 vcore per server/socket
+- **VOS Operator**: 2 vcores (includes PTP: 0.3 + PaaS: 0.8 + other: 0.9)
+- **Verizon Operator**: 1 vcore (global minimum applies)
+- **Note**: PTP and PaaS are INCLUDED in shared core count, not additional
+
+---
+
+## SERVER CONFIGURATION RULES
+
+### Rule S1: Supported Server Configurations
+- **VOS**: 32 pcore (64 vcore) OR 40 pcore (80 vcore) - single socket
+- **Verizon**: 32 pcore (64 vcore) - single socket
+- **Boost**: 24 pcore (48 vcore) single socket OR 32 pcore x2socket (32 pcore per socket, 64 pcore total)
+
+### Rule S2: Multi-Socket Handling
+- Each socket treated as separate server for ALL rules
+- Apply all placement and capacity rules per socket
+- "32pcore x2socket" = 32 pcores per socket (total 64 pcores)
+
+---
+
+## MANDATORY POD PLACEMENT RULES
+
+### Rule M1: Basic Mandatory Pods
+Every vDU deployment must include: DPP, DIP, RMP, CMP, DMP, PMP
+- **DIP, DMP, PMP**: No specific placement constraints (flexible placement)
+
+### Rule M2: DPP Placement Rules
+- **Default**: Exactly 1 DPP per socket
+- **With HA enabled**: More than 1 DPP per socket is allowed
+- **With in-service upgrade**: DPP pods must have anti-affinity (not on same socket)
+
+### Rule M3: RMP Placement Rules
+**Normal scenario (default)**:
+- Place same number of RMP pods as DPP pods
+- Place each RMP on same socket as its corresponding DPP
+
+**Switch scenario** (when vDU-RU switch connection = yes):
+- Place exactly 1 RMP for entire vDU
+- Place RMP on any server/socket with sufficient capacity
+
+### Rule M4: CMP Placement Rules
+- **With HA enabled**: Deploy exactly 2 CMP pods with anti-affinity (not on same socket)
+- **Without HA**: Flexible placement (quantity from input data)
+
+---
+
+## OPERATOR-SPECIFIC POD RULES
+
+### Rule O1: VOS Operator IPsec Pods
+- **IPP**: Mandatory for VOS operator (exactly 1 per vDU)
+- **IIP**: Required only for multi-server vDU
+  - Place exactly 1 IIP on every server that does NOT host IPP
+  - Single-server vDU: No IIP needed
+
+### Rule O2: VOS Operator vCU Deployment
+vCU deployment is optional. If deployed:
+- **vDU flavor "medium-regular-spr-t23"**: Use vCU "tiny-dran-mini" (15 vcores)
+- **All other vDU flavors**: Use vCU "tiny-dran" (18 vcores)
+
+### Rule O3: VOS Operator Special vDU Flavors
+These vDU flavors automatically include IIP:
+- medium-tdd-spr-t20
+- small-tdd-spr-t20  
+- medium-tdd-gnr-t20
+
+### Rule O4: DirectX2 Co-location (VOS only)
+When DirectX2 function is required, these pods are mandatory and must be co-located on same server/socket:
+- vDU (uADPF) IPP
+- vCU (ACPF) IPP  
+- CSP
+- vCU (AUPF) UPP
+
+**Constraint**: If co-location cannot be satisfied due to capacity, deployment fails
+
+---
+
+## ANTI-AFFINITY RULES
+
+### Rule A1: Anti-Affinity Definition
+"Anti-affinity" means pods cannot be placed on the same socket
+
+### Rule A2: Anti-Affinity Applications
+- **DPP**: When in-service upgrade = yes
+- **CMP**: When HA = yes
+
+---
+
+## VALIDATION RULES
+
+### Rule V1: Success Conditions
+Return "Success" if ALL rules are satisfied
+
+### Rule V2: Failure Conditions  
+Return "Failure" with specific reason if any rule violation occurs
+Examples:
+- "Insufficient server core capacity"
+- "Anti-affinity constraint violated"
+- "Required pod co-location cannot be satisfied"
+
+### Rule V3: Input Validation
+Validate that all required input parameters are provided:
+- Server configuration details
+- Pod vcore requirements  
+- Feature flags (HA, in-service upgrade, switch connection, DirectX2)
+- Operator type
+
+---
+
+## ADDITIONAL RULES
+
+### Rule X1: Multi-Server vDU Configuration
+- vDU can be deployed across multiple servers if required
+- All rules apply per server/socket
+
+### Rule X2: DPP Multi-Server Reference (Placeholder)
+For DPP deployment in multi-server configs, refer to:
+- Isol CPU value = "x" (placeholder)
+- DPP POD ID = "y" (placeholder)
+
+---
+
+## IGNORED RULES (Incomplete)
+- Boost Operator specific rules (marked "Update Required")
+- Some Verizon Operator details (marked "Update Required")

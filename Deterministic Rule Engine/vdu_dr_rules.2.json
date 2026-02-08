@@ -1,0 +1,396 @@
+{
+  "metadata": {
+    "title": "vDU Deployment Rules",
+    "description": "Clarified and structured rules for RAG pipeline",
+    "version": "1.0",
+    "last_updated": "2025-09-16"
+  },
+  "core_concepts": {
+    "basic_units": {
+      "pcore": {
+        "definition": "Physical CPU core",
+        "type": "physical_core"
+      },
+      "vcore": {
+        "definition": "Virtual Core",
+        "conversion_ratio": "1 pcore = 2 vcores",
+        "type": "virtual_core"
+      },
+      "socket": {
+        "definition": "NUMA unit - each socket treated as separate server for all rules",
+        "type": "numa_unit"
+      },
+      "server": {
+        "definition": "Can have 1 or 2 sockets",
+        "socket_range": [1, 2]
+      }
+    },
+    "pod_types": {
+      "mandatory_vdu_pods": {
+        "description": "Required for every vDU",
+        "pods": ["DPP", "DIP", "RMP", "CMP", "DMP", "PMP"]
+      },
+      "optional_pods": {
+        "description": "Operator/feature dependent",
+        "pods": ["IPP", "IIP", "UPP", "CSP"]
+      }
+    },
+    "input_parameters": {
+      "required": [
+        "operator_type",
+        "pod_vcore_requirements",
+        "vdu_flavor_name"
+       
+      ],
+      "optional" :[
+        "server_configuration",
+         "number_of_servers",
+         "feature_flags"
+      ],
+      "server_configuration": ["cores", "sockets"],
+      "operator_type": ["VOS", "Verizon", "Boost"],
+      "feature_flags": {
+        "ha_enabled": "boolean",
+        "in_service_upgrade": "boolean",
+        "vdu_ru_switch_connection": "boolean",
+        "directx2_required": "boolean",
+        "vcu_deployment_required": "boolean"
+      }
+    }
+  },
+  "capacity_calculation_rules": {
+    "C1": {
+      "rule_name": "Server Capacity Formula",
+      "description": "For each server/socket, the following must be satisfied",
+      "formula": "Sum(vcore requests of all pods on server/socket) ≤ (Total vcores on server/socket) - (CaaS vcores) - (Shared vcores)",
+      "applies_to": "per_server_socket"
+    },
+    "C2": {
+      "rule_name": "Core Conversion",
+      "description": "Core conversion and multi-socket handling",
+      "conversion": "Total vcores = Physical cores × 2",
+      "multi_socket_rule": "Apply capacity check per socket independently"
+    },
+    "C3": {
+      "rule_name": "CaaS Core Allocation",
+      "description": "CaaS core allocation per server/socket",
+      "applies_to": "per_server_socket",
+      "allocations": {
+        "VOS": 4,
+        "Verizon": 4,
+        "Boost": "incomplete_rules"
+      }
+    },
+    "C4": {
+      "rule_name": "Shared Core Allocation",
+      "description": "Shared core allocation per server/socket",
+      "applies_to": "per_server_socket",
+      "global_minimum": 1,
+      "operator_specific": {
+        "VOS": {
+          "vcores": 2,
+          "breakdown": {
+            "PTP": 0.3,
+            "PaaS": 0.8,
+            "other": 0.9
+          },
+          "note": "PTP and PaaS are INCLUDED in shared core count, not additional"
+        },
+        "Verizon": {
+          "vcores": 1,
+          "note": "global minimum applies"
+        }
+      }
+    }
+  },
+  "server_configuration_rules": {
+    "S1": {
+      "rule_name": "Supported Server Configurations",
+      "configurations": {
+        "VOS": {
+          "options": [
+            {
+              "pcores": 32,
+              "vcores": 64,
+              "sockets": 1
+            },
+            {
+              "pcores": 40,
+              "vcores": 80,
+              "sockets": 1
+            }
+          ]
+        },
+        "Verizon": {
+          "options": [
+            {
+              "pcores": 32,
+              "vcores": 64,
+              "sockets": 1
+            }
+          ]
+        },
+        "Boost": {
+          "options": [
+            {
+              "pcores": 24,
+              "vcores": 48,
+              "sockets": 1
+            },
+            {
+              "pcores": 64,
+              "vcores": 128,
+              "sockets": 2,
+              "pcores_per_socket": 32,
+              "description": "32pcore x2socket"
+            }
+          ]
+        }
+      }
+    },
+    "S2": {
+      "rule_name": "Multi-Socket Handling",
+      "rules": [
+        "Each socket treated as separate server for ALL rules",
+        "Apply all placement and capacity rules per socket",
+        "32pcore x2socket = 32 pcores per socket (total 64 pcores)"
+      ]
+    }
+  },
+  "mandatory_pod_placement_rules": {
+    "M1": {
+      "rule_name": "Basic Mandatory Pods",
+      "description": "Every vDU deployment must include: DPP, DIP, RMP, CMP, DMP, PMP",
+      "flexible_placement": ["DIP", "DMP", "PMP"],
+      "constrained_placement": ["DPP", "RMP", "CMP"]
+    },
+    "M2": {
+      "rule_name": "DPP Placement Rules",
+      "scenarios": {
+        "default": {
+          "rule": "Exactly 1 DPP per socket"
+        },
+        "with_ha_enabled": {
+          "rule": "More than 1 DPP per socket is allowed"
+        },
+        "with_in_service_upgrade": {
+          "rule": "DPP pods must have anti-affinity (not on same socket)"
+        }
+      }
+    },
+    "M3": {
+      "rule_name": "RMP Placement Rules",
+      "scenarios": {
+        "normal": {
+          "description": "Default scenario",
+          "rules": [
+            "Place same number of RMP pods as DPP pods",
+            "Place each RMP on same socket as its corresponding DPP"
+          ]
+        },
+        "switch": {
+          "description": "When vDU-RU switch connection = yes",
+          "rules": [
+            "Place exactly 1 RMP for entire vDU",
+            "Place RMP on any server/socket with sufficient capacity"
+          ]
+        }
+      }
+    },
+    "M4": {
+      "rule_name": "CMP Placement Rules",
+      "scenarios": {
+        "with_ha_enabled": {
+          "rule": "Deploy exactly 2 CMP pods with anti-affinity (not on same socket)"
+        },
+        "without_ha": {
+          "rule": "Flexible placement (quantity from input data)"
+        }
+      }
+    }
+  },
+  "operator_specific_pod_rules": {
+    "O1": {
+      "rule_name": "VOS Operator IPsec Pods",
+      "operator": "VOS",
+      "pods": {
+        "IPP": {
+          "requirement": "Mandatory for VOS operator",
+          "quantity": "exactly 1 per vDU"
+        },
+        "IIP": {
+          "requirement": "Required only for multi-server vDU",
+          "placement_rule": "Place exactly 1 IIP on every server that does NOT host IPP",
+          "single_server_rule": "Single-server vDU: No IIP needed"
+        }
+      }
+    },
+    "O2": {
+      "rule_name": "vCU Deployment",
+      "operator": "VOS",
+      "condition": "vCU deployment required",
+      "logic": {
+        "if_flavor_equals": "medium-regular-spr-t23",
+        "then": {"vcu_type": "tiny-dran-mini", "vcores": 15},
+        "else": {"vcu_type": "tiny-dran", "vcores": 18}
+      },
+      "examples": [
+        {"flavor": "medium-regular-spr-t23", "vcores": 15},
+        {"flavor": "medium-tdd-spr-t20", "vcores": 18},
+        {"flavor": "small-tdd-gnr-t20", "vcores": 18}
+      ],
+      "note": "Only exact 'medium-regular-spr-t23' uses 15 vcores"
+    },
+    "O3": {
+      "rule_name": "VOS Operator Special vDU Flavors",
+      "operator": "VOS",
+      "description": "These vDU flavors automatically include IIP",
+      "flavors": [
+        "medium-tdd-spr-t20",
+        "small-tdd-spr-t20",
+        "medium-tdd-gnr-t20"
+      ]
+    },
+    "O4": {
+      "rule_name": "DirectX2 Co-location",
+      "operator": "VOS",
+      "description": "When DirectX2 function is required, these pods are mandatory and must be co-located on same server/socket",
+      "network_function": {
+        "uADPF": {
+          "mandatory_pods": [ "CSP", "IPP"]
+        },
+        "ACPF": {
+          "mandatory_pods": [ "CSP", "IPP"]
+          },
+        "AUPF": {
+          "mandatory_pods": [ "CSP", "UPP"]
+        }
+      },
+      "constraint": "If co-location cannot be satisfied due to capacity, deployment fails"
+    },
+    "O5": {
+      "rule_name": "vCSR Deployment",
+      "operator": "VOS",
+      "description": "vCSR deployment is optional. If deployed:",
+      "flavor": {
+        "medium-regular-gnr-t22": {
+          "vcores": 4
+        }
+      },
+      "default_server_config": {
+        "pcores": 64,
+        "description": "64 pCore configuration for vCSR deployments"
+      }
+    }
+  },
+  "anti_affinity_rules": {
+    "A1": {
+      "rule_name": "Anti-Affinity Definition",
+      "definition": "Anti-affinity means pods cannot be placed on the same socket"
+    },
+    "A2": {
+      "rule_name": "Anti-Affinity Applications",
+      "applications": {
+        "DPP": {
+          "condition": "When in-service upgrade = yes"
+        },
+        "CMP": {
+          "condition": "When HA = yes"
+        }
+      }
+    }
+  },
+  "validation_rules": {
+    "V1": {
+      "rule_name": "Success Conditions",
+      "condition": "Return 'Success' if ALL rules are satisfied"
+    },
+    "V2": {
+      "rule_name": "Failure Conditions",
+      "condition": "Return 'Failure' with specific reason if any rule violation occurs",
+      "example_failures": [
+        "Insufficient server core capacity",
+        "Anti-affinity constraint violated",
+        "Required pod co-location cannot be satisfied"
+      ]
+    },
+    "V3": {
+      "rule_name": "Input Validation",
+      "description": "Validate that all required input parameters are provided",
+      "required_parameters": [
+        "Server configuration details",
+        "Pod vcore requirements",
+        "Feature flags (HA, in-service upgrade, switch connection, DirectX2)",
+        "Operator type"
+      ]
+    }
+  },
+  "additional_rules": {
+    "X1": {
+      "rule_name": "Multi-Server vDU Configuration",
+      "rules": [
+        "vDU can be deployed across multiple servers if required",
+        "All rules apply per server/socket"
+      ]
+    },
+    "X2": {
+      "rule_name": "DPP Multi-Server Reference",
+      "status": "Placeholder",
+      "description": "For DPP deployment in multi-server configs, refer to:",
+      "references": {
+        "isol_cpu_value": "x (placeholder)",
+        "dpp_pod_id": "y (placeholder)"
+      }
+    }
+  },
+  "ignored_rules": {
+    "description": "Incomplete rules not included in processing",
+    "rules": [
+      "Boost Operator specific rules (marked 'Update Required')",
+      "Some Verizon Operator details (marked 'Update Required')"
+    ]
+  },
+  "rule_categories": {
+    "capacity": ["C1", "C2", "C3", "C4"],
+    "server_configuration": ["S1", "S2"],
+    "mandatory_placement": ["M1", "M2", "M3", "M4"],
+    "operator_specific": ["O1", "O2", "O3", "O4", "O5"],
+    "anti_affinity": ["A1", "A2"],
+    "validation": ["V1", "V2", "V3"],
+    "additional": ["X1", "X2"]
+  },
+  "search_keys": {
+    "by_operator": {
+      "VOS": ["C3", "C4", "S1", "O1", "O2", "O3", "O4", "O5"],
+      "Verizon": ["C3", "C4", "S1"],
+      "Boost": ["C3", "S1"]
+    },
+    "by_feature": {
+      "HA": ["M2", "M4", "A2"],
+      "in_service_upgrade": ["M2", "A2"],
+      "switch_connection": ["M3"],
+      "DirectX2": ["O4"]
+    },
+    "by_pod_type": {
+      "DPP": ["M1", "M2", "X2"],
+      "RMP": ["M1", "M3"],
+      "CMP": ["M1", "M4", "A2"],
+      "DIP": ["M1"],
+      "DMP": ["M1"],
+      "PMP": ["M1"],
+      "IPP": ["O1", "O4"],
+      "IIP": ["O1", "O3"],
+      "vCU": ["O2"],
+      "CSP": ["O4"],
+      "UPP": ["O4"]
+    },
+    "by_concept": {
+      "capacity": ["C1", "C2", "C3", "C4"],
+      "placement": ["M1", "M2", "M3", "M4", "O1", "O2", "O3", "O4"],
+      "anti_affinity": ["A1", "A2"],
+      "validation": ["V1", "V2", "V3"],
+      "cores": ["C1", "C2", "C3", "C4"],
+      "sockets": ["S1", "S2", "A1", "A2"]
+    }
+  }
+}
