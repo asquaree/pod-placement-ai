@@ -1,0 +1,36 @@
+Operator,Network Function,Dimensioning Flavor,Package,DPP,DIP,DMP,CMP,PMP,RMP,IPP
+Verizon,ADPF,medium-tdd-regular-spr,25A,medium-tdd-regular-spr,medium-1.8m-spr,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+VOS,uADPF,medium-regular-spr-t21,25A,fdd-270m-18c-gsm-6trx-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,small-tdd-6fh-3fhm,25B,small-tdd,tiny,medium,medium,medium,medium,N/A
+VOS,uADPF,medium-regular-spr-t20,25B,medium-slim-gsm-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,medium-regular-spr-t22,25B,medium-slim-gsm-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,medium-tdd-spr-t20,25B,tdd-510m-9c-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,medium-regular-spr-t21,25B,fdd-270m-18c-gsm-9trx-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,small
+VOS,uADPF,medium-regular-spr-t23,25B,fdd-120m-12c-gsm-8trx-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,small-tdd-spr-t20,25B,tdd-300m-3c-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,medium
+VOS,uADPF,medium-regular-sn-t20,25B,medium-regular-sn-t20-xaca,medium-2m,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+VOS,uADPF,medium-regular-gnr-t20,25B,medium-regular-gsm-gnr-t20,medium-2m,medium-uni,medium-uni,medium-uni,medium-uni,small
+VOS,uADPF,medium-tdd-gnr-t20,25B,medium-tdd-gnr-t20,medium-2m,medium-uni,medium-uni,medium-uni,medium-uni,large
+VOS,uADPF,medium-regular-gnr-t22,26A,medium-regular-gnr-t22,medium-2m,medium-uni,medium-uni,medium-uni,medium-uni,small
+VOS,uADPF,medium-regular-gnr-mnode-2-t22,26A,medium-regular-gnr-t22,medium-2m,medium-uni,medium-uni,medium-uni,medium-uni,small
+Verizon,ADPF,small-tdd,25B,small-tdd,tiny,medium,medium,medium,medium,N/A
+Verizon,ADPF,small-tdd-light,25B,small-tdd-light-6c,tiny,medium,medium,medium,medium,N/A
+Verizon,ADPF,medium-tdd-light,25B,medium-tdd-light-db-9c,medium-1m,medium,medium,medium,medium,N/A
+Verizon,ADPF,medium-tdd-light-6sector,25B,medium-tdd-light-100m12c,medium-1m,medium,medium,medium,medium,N/A
+Verizon,ADPF,medium,25B,medium,medium-1mmedium-1m,medium,medium,medium,medium,N/A
+Verizon,ADPF,medium-icl,25B,medium-icl,medium-icl,medium,medium,medium,medium,N/A
+Verizon,ADPF,medium-icl-mnode,25B,medium-icl,medium-2m,medium,medium,medium,medium,N/A
+Verizon,ADPF,medium-tdd-regular-spr ,25B,medium-tdd-regular-spr,medium-1.8m-spr,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+Verizon,uADPF,medium-uni,25B,medium-uni,medium-uni,medium-uni-pooling,medium-uni-pooling,medium-uni-pooling,medium-uni-pooling,N/A
+Verizon,uADPF,medium-uni-regular-spr ,25B,medium-uni-regular-spr,medium-uni-spr,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+Verizon,uADPF,medium-uni-light-spr ,25B,medium-uni-light-spr,medium-uni,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+Verizon,uADPF,medium-uni-light-spr-enterprise,25B,medium-uni-light-spr-enterprise,tiny-spr,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+Verizon,uADPF,medium-uni-light-gnr-hcc,25B,medium-uni-light-gnr-hcc,tiny-1.2m-gnr,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+Verizon,uADPF,medium-uni-regular-gnr-xcc,25B,medium-uni-regular-gnr-xcc,medium-3.6m-gnr,medium-uni,medium-uni,medium-uni,medium-uni,N/A
+PNU,uADPF,medium-uni-enterprise,25B,medium,medium,medium,medium,medium,medium,N/A
+BM,uADPF,medium-uni-regular-spr ,25B,medium,medium,medium,medium,medium,medium,N/A
+BM,uADPF,medium-regular-t1,25B,medium,medium,medium,medium,medium,medium,N/A
+BM,uADPF,medium-regular-t3,25B,medium,medium,medium,medium,medium,medium,N/A
+BM,uADPF,medium-regular-t5,25B,medium,medium,medium,medium,medium,medium,N/A
+BM,uADPF,medium-regular-t7,25B,medium,medium,medium,medium,medium,medium,N/A
+Boost,uADPF,medium-uni-regular-gnr-xcc,26A,medium-uni-regular-gnr-xcc,medium-3.6m-gnr,medium-uni,medium-uni,medium-uni,medium-uni,N/A

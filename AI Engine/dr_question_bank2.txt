@@ -1,0 +1,116 @@
+vDU POD Placement Common Rule
+
+Q1: What determines how many vDU pods can be deployed on a server?  
+A1: The pod must be deployed within the number of cores available on the server. Server core configurations can be 32pcore, 40pcore, 24pcore, or 32pcore x2socket, and 1 physical core equals 2 virtual cores.
+
+Q2: How do I interpret "32pcore" vs "32pcore x2socket"?  
+A2: "32pcore" means a single socket with 32 physical cores; "32pcore x2socket" means 2 sockets, each with 32 physical cores.
+
+Q3: How many virtual cores (vcores) does a server with 24 physical cores have?  
+A3: 24pcore means 48 vcores, since 1 physical core = 2 virtual cores.
+
+Q4: Can a vDU be configured across multiple servers?  
+A4: Yes, although it is configured on 1 server by default, it can be spread across multiple servers if needed.
+
+Q5: How many vcores might CaaS require?  
+A5: The number of cores needed for CaaS can be 2, 4, or 6 vcore, as determined by the business configuration.
+
+Q6: What is the minimum requirement for shared core allocation?  
+A6: At least 1 vcore must be allocated for shared core, though this can change depending on business needs.
+
+Q7: How do you calculate the maximum allowed sum of pod core requests on a server?  
+A7: (Sum of core requests from all pods on server) ≤ (Total server core count - CaaS core count - shared core count).
+
+Q8: Where can I find details on pod types and their core requirements?  
+A8: Refer to the “Flavor List SVRxxx” spreadsheet, ‘tab’, for information on POD types and vDU flavor core needs.
+
+Q9: Which PODs are mandatory per vDU?  
+A9: DPP, DIP, RMP, CMP, DMP, PMP must each be deployed once per vDU by default.
+
+
+DPP Rule
+
+Q10: How should DPP pods be placed by default?  
+A10: One DPP pod must be placed per socket. As an exception, more than one per socket is allowed for vDU High Availability (HA).
+
+Q11: What rule applies to DPP pods during in-service upgrade scenarios?  
+A11: DPP pods must follow an anti-affinity rule—they should not be placed together on the same core or socket.
+
+
+RMP Rule
+
+Q12: How many RMP pods should be deployed compared to DPP pods?  
+A12: Deploy the same number of RMP pods as DPP pods, on the same socket.
+
+Q13: What is the rule for RMP pods if the vDU-RU connection is via a switch?  
+A13: Use only one RMP pod per vDU (“cross vDU”) if the connection is through a switch.
+
+
+CMP Rule
+
+Q14: How should CMP pods be placed if High Availability is supported?  
+A14: Place two CMP pods, with each following anti-affinity (not placed together).
+
+
+VOS Operator Rule
+
+Q15: What is the standard server and core setup for VOS Operator?  
+A15: 32 physical cores (64vcores) or 40 physical cores (80vcores) per server, with CaaS assigned 4 vcores and shared core 2 vcores.
+
+Q16: Is vCU deployment allowed?  
+A16: Yes, if required.
+
+Q17: How is the vCU flavor determined?  
+A17:  
+•  For vDU flavor ‘medium-regular-spr-t23’, use vCU ‘tiny-dran-mini’ (15 vcore).  
+•  For all other vDU flavors, use ‘tiny-dran’ (18 vcore).
+
+Q18: What is the rule for IPsec pods?  
+A18:  
+•  Always deploy IPP (IPsec POD).  
+•  For multi-server vDU, deploy IIP on all servers that do NOT have an IPP.  
+•  If DirectX2 is needed, place vDU (uADPF) IPP, vCU (ACPF) IPP, CSP, and vCU (AUPF) UPP on same server.
+
+Q19: Which vDU flavors always deploy with IIP?  
+A19: medium-tdd-spr-t20, small-tdd-spr-t20, and medium-tdd-gnr-t20 always include IIP.
+
+
+VzW Rule
+
+Q20: What are the core specifications for VzW servers?  
+A20: 32 physical cores (64vcore) with 4 vcore reserved for CaaS.  
+(Note: Rule update required.)
+
+
+Boost Rule
+
+Q21: How many servers and what core configurations are needed for Boost?  
+A21: Two servers required, each with 24 physical cores (48vcore) or a 2-socket 32pcore system (64x2 vcores).
+
+Q22: What are the CaaS core requirements for Boost?  
+A22: 2, 4, or 6 vcores.
+
+Q23: How are operations distributed in 2-socket servers?  
+A23: Operations are performed per socket (NUMA unit).
+
+
+Return/Validation Rule
+
+Q24: What is reported if all rules pass validation?  
+A24: Validation returns ‘Success’.
+
+Q25: What happens if validation fails?  
+A25: Validation returns ‘Failure’ with a detailed reason (e.g., ‘insufficient server core number’).
+
+
+Additional Rules
+
+Q26: How should DPP deployment in multi-server setups be handled for CaaS providers?  
+A26: Refer to the Isol CPU value or DPP POD ID as per the provider’s requirements.
+
+Q27: What are some example usages and values for shared core allocation?  
+A27: For instance, PTP Notifi may use 0.3 vcore, and PaaS may use 0.8 vcore.
+
+
+
+This comprehensive question bank enables anyone to check compliance and understand implementation details without external references. Let me know if you’d like specially formatted questions (e.g., true/false, multiple choice), filtering by rule group, or anything else!

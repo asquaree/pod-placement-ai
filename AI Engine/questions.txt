@@ -1,0 +1,73 @@
+# Load the Excel sheets
+dimensioning_df = pd.read_excel("dimensioning_flavour_sheet.xlsx")
+Question 1:
+
+Find the dimensioning flavor used by the VOS and list the pods and pod flavors used in the flavor one by one sequentially.
+
+Find the dimensioning flavor used by the Verizon and mention the network function and list the pods and pod flavors used in the flavor one by one sequentially.
+
+Find the dimensioning flavor used by the VOS and mention the network function and list the pods and pod flavors used in the flavor one by one sequentially.
+
+
+
+Question 1:
+
+You are a configuration analysis assistant.
+
+Given a document or context related to telecom network functions and their configurations, extract the following information for VOS in the specified format exactly as shown below:
+
+---
+Dimensioning Flavor: <insert dimensioning flavor string>
+
+Network Function: <insert network function name>
+
+Pods and Pod Flavors:
+1. <POD_TYPE_1>: <POD_FLAVOR_1>
+2. <POD_TYPE_2>: <POD_FLAVOR_2>
+3. ...
+---
+
+Only use the information present in the context. If something is missing, say "Not Available" in place of the value.
+
+Now, based on the context below, extract and return the data:
+
+{retrieved_context}
+
+
+Question 2:
+
+Let me know the resources used to write the corresponding pod flavors. Give information about all resources one by one sequentially for each pod flavor.
+
+Question 3:
+
+Task Type
+Propose optimal pod placement for the given server based on the provided Flavor, ensuring compliance with rules.
+
+Instructions
+Before proceeding with pod placement, review and adhere to the common rules and operator-specific rules.
+Ensure compliance with all rules while proposing pod placement that aligns with the server specifications and flavor specifications.
+For calculations (arithmetic operations), start a new line with #Calculation, include the calculation formula, and provide the accurate result.
+If the requested core count exceeds the available core count, inform the user that it is not possible with the current server configuration.
+
+What to Do
+Begin by summarizing the objective. List the server specifications and the Pod flavors that make up the given Flavor.
+Explicitly state the Common Rules referred to.
+Explicitly state the Operator-Specific Rules referred to.
+Finally, propose the pod placement.
+What Not to Do
+Do not propose placements that violate the rules.
+Do not make errors in arithmetic calculations—this is absolutely critical.
+Do not address unrelated topics.
+Example
+For each Pod, list the requested core count and provide reasoning based on rules and Pod flavors. For example:
+
+DPP Request: 24 vcore. Essential placement Pod; requires one per server as per medium-tdd-regular-spr Pod flavor.
+IPP Request: 1 vcore. Required for IPsec support if demanded by VOS operator.
+RMP Request: 4 vcore. Essential placement Pod; calculated based on medium-uni Pod flavor.
+Shared Core: 2 vcore.
+CaaS: 6 vcore.
+vCU: 15 vcore. tiny-dran-mini flavor placement.
+#Calculation 24 + 1 + 4 + 2 + 6 + 15 = 52 < 64
+Placement is possible.
+
+Let me know if the corresponding pod flavors can be successfully placed on the vcore server {num_server = 4 and number of vCores is 60}. Refer to the Pod placement rule, refer to which rule to specify in detail which pod is placed, and infer all processes as step-by-step.            
