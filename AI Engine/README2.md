@@ -9,53 +9,124 @@ NetTune AI now features a professional **separated architecture** with distinct 
 ```
 NetTune AI/
 ├── 🔧 BACKEND
-│   └── nettune_backend.py      # Business logic, data processing, LLM integration
+│   └── nettune_backend.1.py    # Business logic, data processing, LLM integration (see Sync section)
 │
-├── 🎨 FRONTEND  
-│   └── nettune_frontend.py     # Streamlit UI, user interface, visual components
+├── 🎨 FRONTEND
+│   └── nettune_frontend.py    # Streamlit UI, user interface, visual components
+│
+├── 📊 DATA (required at runtime)
+│   ├── dimension_flavor_25A_25B_26A.csv   # Dimensioning lookup table
+│   ├── pod_flavors_25A_25B_EU_US.csv      # Pod flavor resource specs
+│   └── vdu_dr_rules.json                  # DR rules for pod placement (see Sync section)
 │
 ├── 📄 DOCUMENTATION
-│   ├── README.md              # General documentation
-│   ├── README_UI.md           # UI-specific guide
-│   ├── README_SEPARATED.md    # This file
+│   ├── README2.md             # This file
 │   └── ARCHITECTURE.md        # Detailed architecture documentation
 │
 ├── 🚀 DEPLOYMENT
-│   ├── requirements.txt       # Python dependencies
-│   └── launch_nettune.bat     # Windows launcher
+│   ├── requirements.1.txt     # Python dependencies (see Sync section)
+│   ├── docker-compose.yml     # Docker Compose (expects Dockerfile)
+│   └── Dockerfile.txt         # Docker build file (rename/copy for Docker)
 │
-└── 📦 LEGACY
-    ├── pod_placement_assistant.py  # Original monolithic CLI version
-    └── nettune_ui.py              # Original monolithic UI version
+└── 📦 OTHER
+    ├── dr_rules_rewamped2.txt # Human-readable DR rules (reference)
+    └── podPlacement (1).ipynb # Exploratory notebook (LangChain/FAISS)
 ```
+
+---
+
+## ✅ **Application Sync Status**
+
+This section describes how well the repository files are aligned so the app runs correctly. Fix any **⚠️ Action required** items before running.
+
+### **Sync checklist**
+
+| Component | Status | Notes |
+|-----------|--------|--------|
+| **Backend module name** | ⚠️ Action required | Frontend imports `nettune_backend`, but the file is `nettune_backend.1.py`. Python will not find the module unless it is named `nettune_backend.py`. |
+| **Data CSVs** | ✅ Synced | `dimension_flavor_25A_25B_26A.csv` and `pod_flavors_25A_25B_EU_US.csv` exist and are loaded by the backend. |
+| **DR rules file** | ⚠️ Action required | Backend reads `vdu_dr_rules.json`; this file is **not** in the repo. "Pod placement" queries will fail until the file exists. You have `dr_rules_rewamped2.txt` as reference. |
+| **Requirements** | ⚠️ Action required | Repo has `requirements.1.txt`. Backend also uses `transformers` (for tokenizer); add it if you use token counting. |
+| **Docker** | ⚠️ Action required | `docker-compose.yml` uses `dockerfile: Dockerfile`; the repo has `Dockerfile.txt`. Rename or copy to `Dockerfile` for `docker-compose build`. |
+| **Frontend → Backend** | ✅ Synced | `nettune_frontend.py` calls `get_backend()` and `backend.process_query()` only; no UI code in backend. |
+| **Working directory** | ✅ Synced | Backend uses relative paths for CSVs and `vdu_dr_rules.json`; run the app from the project root (AI Engine folder). |
+
+### **How to sync and run**
+
+1. **Backend module (required to run)**  
+   From the project root (e.g. `AI Engine/`):
+   - **Option A:** Copy or rename the backend file so Python can import it:
+     ```bash
+     cp nettune_backend.1.py nettune_backend.py
+     ```
+   - **Option B:** Or rename: `nettune_backend.1.py` → `nettune_backend.py`  
+   Then start the app with:
+   ```bash
+   streamlit run nettune_frontend.py
+   ```
+
+2. **DR rules (required for "pod placement" queries)**  
+   - Create `vdu_dr_rules.json` in the same folder as the backend (e.g. export rules from your process), or  
+   - Change the backend to load `dr_rules_rewamped2.txt` (or another path) in `_load_dr_rules()` and adapt parsing if needed.
+
+3. **Requirements**  
+   Install from the file you have, and add optional tokenizer support if needed:
+   ```bash
+   pip install -r requirements.1.txt
+   # If using tokenizer (e.g. Qwen) for token counting:
+   pip install transformers
+   ```
+   If you standardise on `requirements.txt`, copy `requirements.1.txt` to `requirements.txt` and add `transformers` if required.
+
+4. **Docker**  
+   So that Compose finds the Dockerfile:
+   ```bash
+   cp Dockerfile.txt Dockerfile
+   docker-compose up --build
+   ```
+   Or point `docker-compose.yml` at `Dockerfile.txt` by changing `dockerfile: Dockerfile` to `dockerfile: Dockerfile.txt`.
+
+### **Quick verification**
+
+After fixing the backend module name and (if needed) DR rules and requirements:
+
+```bash
+# From project root (AI Engine/)
+pip install -r requirements.1.txt
+cp nettune_backend.1.py nettune_backend.py   # or rename
+streamlit run nettune_frontend.py
+```
+
+Open `http://localhost:8501`. Try a dimensioning query (e.g. "What are the dimensioning flavors for uADPF?"). If that works, frontend and backend are synced for the main flow.
 
 ---
 
 ## 🚀 **Quick Start with Separated Architecture**
 
-### **1. Install Dependencies**
+### **1. Ensure application is synced**
+See **Application Sync Status** above. At minimum, ensure the backend is importable as `nettune_backend` (e.g. `cp nettune_backend.1.py nettune_backend.py`).
+
+### **2. Install Dependencies**
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.1.txt
+# Optional, for token counting: pip install transformers
 ```
 
-### **2. Run with Separated Architecture**
+### **3. Run the application**
 
-#### **Option A: Windows Launcher**
-```bash
-double-click launch_nettune.bat
-```
-
-#### **Option B: Command Line**
+#### **Option A: Command line (recommended)**
 ```bash
 streamlit run nettune_frontend.py
 ```
 
-#### **Option C: Python Module**
+#### **Option B: Python module**
 ```bash
 python nettune_frontend.py
 ```
 
-### **3. Access the Application**
+Run from the **project root** (the directory that contains `nettune_frontend.py`, the CSVs, and the backend file) so relative paths for data files work.
+
+### **4. Access the application**
 Open your browser and go to: `http://localhost:8501`
 
 ---
@@ -264,9 +335,7 @@ Phase 4: Multi-tenant → Cloud Native
 ## 📚 **Documentation**
 
 - 📖 **[ARCHITECTURE.md](ARCHITECTURE.md)**: Detailed technical architecture
-- 🎨 **[README_UI.md](README_UI.md)**: UI-specific documentation  
-- 🔧 **[README.md](README.md)**: General project documentation
-- 🏗️ **[README_SEPARATED.md](README_SEPARATED.md)**: This file
+- 🏗️ **README2.md** (this file): Setup, sync status, quick start, and separated architecture overview
 
 ---
 

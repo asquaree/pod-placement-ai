@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""
+NetTune AI Backend - Pod Placement Assistant
+
+This module provides the backend logic for the NetTune AI application, which assists
+with 5G/vDU network pod placement. It handles:
+  - Loading dimensioning and pod flavor data from CSV
+  - Parsing natural language queries to extract field=value criteria
+  - Routing queries to dimensioning DB, pod flavors DB, or LLM (DR rules / general)
+  - Calling Samsung Gauss LLM API for conversational and rule-based answers
+  - Formatting responses and parsing structured output (dimensioning flavor, pods)
+
+The frontend (nettune_frontend.py) communicates only via get_backend() and
+backend.process_query(); no UI dependencies here.
+"""
 
 import pandas as pd
 import re
@@ -8,8 +22,19 @@ from typing import List, Dict, Any, Optional, Tuple, Set
 from transformers import AutoTokenizer
 import logging
 
+
+# =============================================================================
+# LLM INTEGRATION - Samsung Gauss API
+# =============================================================================
+
 class GaussLLM():
-    """Custom LLM integration with Gauss API"""
+    """
+    Custom LLM client for Samsung Gauss generative AI API.
+
+    Sends chat-style requests (system prompt + contents) to the Gauss OpenAPI
+    and returns the model's text response. Used for DR rules answers and
+    general conversational queries.
+    """
     temperature: float = 0.1
     max_tokens: int = 32000
     top_p: float = 0.8
@@ -19,7 +44,18 @@ class GaussLLM():
     api_url: str = "https://genai-openapi.sec.samsung.net/swahq/trial/api-chat/openapi/chat/v1/messages"
     app_id: str = "srOZp3TxPOn="
 
-    def _call(self, contents: List,prompt_template: str= "", stop: Optional[List[str]] = None) -> str:
+    def _call(self, contents: List, prompt_template: str = "", stop: Optional[List[str]] = None) -> str:
+        """
+        Send a single non-streaming request to Gauss API and return the reply text.
+
+        Args:
+            contents: List of message content blocks (context, history, question).
+            prompt_template: Optional system prompt (injected as system_prompt in body).
+            stop: Optional stop sequences (not used by current API).
+
+        Returns:
+            Model reply as string, or an error message string if no content in response.
+        """
         current_time = str(int(time.time() * 1000))
         headers = {
             "Content-Type": "application/json",
@@ -47,38 +83,55 @@ class GaussLLM():
         if prompt_template:
             body["system_prompt"] = prompt_template
 
-        # print(contents)
         res = requests.post(self.api_url, headers=headers, json=body, verify=False)
         res.raise_for_status()
 
         data = res.json()
-        # print(data)
 
         if data.get('content'):
             return data.get('content').strip()
         else:
             return "[Error] No valid response received from model."
-    
+
     @property
     def _llm_type(self) -> str:
         return "gauss-custom-llm"
 
+
+# =============================================================================
+# DATA LOADING - CSV to in-memory records
+# =============================================================================
+
 class DataProcessor:
-    """Handles data loading and preprocessing"""
-    
+    """
+    Loads and normalizes dimensioning and pod flavor data from CSV files.
+
+    Produces two lists of dicts: df_map_list (dimensioning rows: Operator,
+    Network Function, Dimensioning Flavor, Package, DPP/DIP/DMP/CMP/PMP/RMP/IPP)
+    and pf_map_list (pod flavor rows: Pod type, Pod flavor, vCPU, vMemory, etc.).
+    These are used by QueryProcessor for field-based filtering.
+    """
+
     def __init__(self):
-        self.df_map_list = []
-        self.pf_map_list = []
-    
+        self.df_map_list = []   # Dimensioning flavor records (one dict per row)
+        self.pf_map_list = []   # Pod flavor records (one dict per row)
+
     def load_csv_data(self) -> Tuple[List[Dict], List[Dict]]:
-        """Load and preprocess CSV data"""
+        """
+        Load both CSVs and build in-memory lists of record dicts.
+
+        Returns:
+            (df_map_list, pf_map_list) for dimensioning and pod flavors.
+        Raises:
+            Exception if either CSV file is missing.
+        """
         try:
             dimensioning_df = pd.read_csv("dimension_flavor_25A_25B_26A.csv")
             pod_flavor_df = pd.read_csv("pod_flavors_25A_25B_EU_US.csv")
         except FileNotFoundError as e:
             raise Exception(f"Required CSV files not found: {e}")
 
-        # Process dimensioning data
+        # --- Dimensioning data: map each row to a dict and keep for query matching ---
         df_docStrList = []
         self.df_map_list = []
 
@@ -104,7 +157,7 @@ class DataProcessor:
             ])
             df_docStrList.append(content.strip())
 
-        # Process pod flavor data
+        # --- Pod flavor data: same idea for pod type/flavor and resource columns ---
         pf_docStrList = []
         self.pf_map_list = []
 
@@ -128,9 +181,9 @@ class DataProcessor:
 
 
         return self.df_map_list, self.pf_map_list
-    
+
     def _create_content_string(self, row, fields):
-        """Create content string from row data"""
+        """Build a single text line per field (e.g. for display); normalizes 'Flavor' to 'Flavour' in output."""
         content = ""
         for field in fields:
             if field == 'Dimensioning Flavor':
@@ -139,11 +192,20 @@ class DataProcessor:
                 content += f"{field}: {row[field]}\n"
         return content
 
+
+# =============================================================================
+# TEXT MATCHING - Fuzzy match query field names to CSV column names
+# =============================================================================
+
 class TextMatcher:
-    """Handles string similarity calculations and fuzzy matching operations."""
-    
+    """
+    String similarity and fuzzy matching so user query terms (e.g. "dimensioning flavour")
+    can be matched to actual CSV column names (e.g. "Dimensioning Flavor").
+    """
+
     @staticmethod
     def levenshtein_distance(s1: str, s2: str) -> int:
+        """Edit distance between two strings (insert/delete/substitute)."""
         if len(s1) < len(s2):
             return TextMatcher.levenshtein_distance(s2, s1)
         if len(s2) == 0:
@@ -158,65 +220,83 @@ class TextMatcher:
                 substitutions = previous_row[j] + (c1 != c2)
                 current_row.append(min(insertions, deletions, substitutions))
             previous_row = current_row
-        
+
         return previous_row[-1]
 
     @staticmethod
     def calculate_similarity_score(candidate: str, target: str) -> float:
+        """
+        Score in [0, 1]: 1.0 exact match, 0.95 after normalising flavour/colour,
+        else combination of character-level (Levenshtein) and word-overlap similarity.
+        """
         candidate_lower = candidate.lower().strip()
         target_lower = target.lower().strip()
-        
+
         if candidate_lower == target_lower:
             return 1.0
-        
+
+        # Treat British vs American spelling as almost identical
         candidate_norm = candidate_lower.replace('flavour', 'flavor').replace('colour', 'color')
         target_norm = target_lower.replace('flavour', 'flavor').replace('colour', 'color')
-        
+
         if candidate_norm == target_norm:
             return 0.95
-        
+
         distance = TextMatcher.levenshtein_distance(candidate_lower, target_lower)
         max_len = max(len(candidate_lower), len(target_lower))
-        
+
         if max_len == 0:
             return 0.0
-        
+
         similarity = 1.0 - (distance / max_len)
-        
+
+        # Blend with Jaccard-like word overlap for multi-word field names
         candidate_words = set(candidate_lower.split())
         target_words = set(target_lower.split())
-        
+
         if candidate_words and target_words:
             word_overlap = len(candidate_words.intersection(target_words))
             total_words = len(candidate_words.union(target_words))
             word_similarity = word_overlap / total_words if total_words > 0 else 0
             similarity = 0.6 * similarity + 0.4 * word_similarity
-        
+
         return similarity
 
     @staticmethod
     def find_best_field_match(candidate_field: str, available_fields: Set[str], min_score: float = 0.5) -> Optional[str]:
+        """Return the available field name that best matches candidate_field, or None if no score >= min_score."""
         best_match = None
         best_score = 0.0
-        
+
         for available_field in available_fields:
             score = TextMatcher.calculate_similarity_score(candidate_field, available_field)
             if score > best_score and score >= min_score:
                 best_score = score
                 best_match = available_field
-        
+
         return best_match
 
 
+# =============================================================================
+# QUERY PROCESSING - Parse natural language into field criteria and filter docs
+# =============================================================================
+
 class QueryProcessor:
-    """Processes natural language queries to filter and extract documents."""
-    
+    """
+    Turns natural language queries into structured criteria (field -> list of values)
+    and filters document lists (dimensioning or pod flavor records) to matching rows.
+
+    Pipeline: clean_query -> separate_context_from_query -> extract_field_value_pairs
+    -> parse_query_for_fields (with TextMatcher) -> find_matching_documents.
+    """
+
     def __init__(self, df_map_list: List[Dict], pf_map_list: List[Dict]):
-        self.df_map_list = df_map_list
-        self.pf_map_list = pf_map_list
-    
+        self.df_map_list = df_map_list   # Dimensioning records for filtering
+        self.pf_map_list = pf_map_list   # Pod flavor records for filtering
+
     @staticmethod
     def clean_query(query: str) -> str:
+        """Normalise query: collapse repeated quotes, remove brackets, collapse whitespace."""
         query = re.sub(r'"{2,}', '"', query)
         query = re.sub(r'[(){}\[\]]', '', query)
         query = re.sub(r'\s+', ' ', query)
@@ -224,44 +304,54 @@ class QueryProcessor:
 
     @staticmethod
     def separate_context_from_query(query: str) -> str:
+        """
+        Strip optional 'context' tail (e.g. 'just for the context ...') so we only
+        parse the main question part for field=value pairs.
+        """
         context_markers = [
             r'just\s+for\s+the\s+context',
             r'these\s+all\s+are',
             r'also\s+called\s+as',
             r'strings\s+like'
         ]
-        
+
         earliest_pos = len(query)
         for marker in context_markers:
             match = re.search(marker, query, re.IGNORECASE)
             if match and match.start() < earliest_pos:
                 earliest_pos = match.start()
-        
+
         return query[:earliest_pos].strip() if earliest_pos < len(query) else query
 
     @staticmethod
     def extract_field_value_pairs(query: str) -> List[Tuple[str, str]]:
+        """
+        Find all field=value or field:value pairs in the query string.
+        Handles quoted values and unquoted values (stops at comma, space, or ' and').
+        """
         pairs = []
-        
+
         i = 0
         while i < len(query):
             if query[i] in '=:':
+                # Walk backward to find start of field name
                 field_start = i - 1
                 while field_start >= 0 and query[field_start].isspace():
                     field_start -= 1
-                
+
                 if field_start >= 0:
                     field_end = field_start + 1
                     while field_start >= 0 and (query[field_start].isalnum() or query[field_start] in ' _-'):
                         field_start -= 1
                     field_start += 1
-                    
+
                     field_candidate = query[field_start:field_end].strip()
-                    
+
+                    # Walk forward to find value (quoted or unquoted)
                     value_start = i + 1
                     while value_start < len(query) and query[value_start].isspace():
                         value_start += 1
-                    
+
                     if value_start < len(query):
                         if query[value_start] in '"\'':
                             quote_char = query[value_start]
@@ -293,32 +383,38 @@ class QueryProcessor:
     
     @staticmethod
     def _clean_field_value_pairs(pairs: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+        """Drop noise words from field names and filter out invalid (too short, placeholder, etc.) pairs."""
         cleaned_pairs = []
         for field_candidate, value in pairs:
             words = field_candidate.split()
             filtered_words = [
-                word for word in words 
+                word for word in words
                 if word.lower() not in {'for', 'the', 'and', 'or', 'extract', 'information', 'following'}
             ]
-            
+
             if filtered_words:
                 clean_field = ' '.join(filtered_words)
-                
+
+                # Keep only reasonable field names (<=3 words) and non-placeholder values
                 if (len(clean_field.split()) <= 3 and
                     len(value) >= 2 and
                     not value.startswith('<') and
                     not re.match(r'^[0-9]+\.$', value)):
                     cleaned_pairs.append((clean_field, value))
-        
+
         return cleaned_pairs
 
     def parse_query_for_fields(self, query: str, available_fields: Set[str]) -> Dict[str, List[str]]:
+        """
+        From free-text query, produce a dict: canonical_field_name -> [value1, value2, ...].
+        Uses extract_field_value_pairs + TextMatcher to map user field names to CSV columns.
+        """
         query_cleaned = self.clean_query(query)
         main_query = self.separate_context_from_query(query_cleaned)
         field_value_pairs = self.extract_field_value_pairs(main_query)
-        
+
         field_criteria = {}
-        
+
         for field_candidate, value in field_value_pairs:
             matched_field = TextMatcher.find_best_field_match(field_candidate, available_fields)
             
@@ -330,49 +426,67 @@ class QueryProcessor:
                     field_criteria[matched_field] = [value]
         
         return field_criteria
-    
-    def find_matching_documents(self, documents: List[Dict], field_criteria: Dict[str, List[str]]) -> List[Dict]:
-        match_documents= []
 
-        for doc in documents:  
-            isMatch = True  
-            for field_name, field_values in field_criteria.items():  
-                if field_name not in doc:  
-                    isMatch = False  
-                    break  
-                match_found = False  
-                for value in field_values:  
-                    if str(doc[field_name]).lower() == str(value).lower():  
-                        match_found = True  
-                        break  # Exit inner loop on first match  
-                if not match_found:  
-                    isMatch = False  
-                    break  # Exit field loop if no match  
-            if isMatch:  
-                match_documents.append(doc)  
-        
+    def find_matching_documents(self, documents: List[Dict], field_criteria: Dict[str, List[str]]) -> List[Dict]:
+        """Return all documents where every criterion field matches at least one of its allowed values."""
+        match_documents = []
+
+        for doc in documents:
+            isMatch = True
+            for field_name, field_values in field_criteria.items():
+                if field_name not in doc:
+                    isMatch = False
+                    break
+                match_found = False
+                for value in field_values:
+                    if str(doc[field_name]).lower() == str(value).lower():
+                        match_found = True
+                        break
+                if not match_found:
+                    isMatch = False
+                    break
+            if isMatch:
+                match_documents.append(doc)
+
         return match_documents
-    
+
     def extract_documents_from_query(self, documents: List[Dict], query: str) -> List[Dict]:
+        """
+        One-shot: parse query into field criteria, then filter documents.
+        Returns [] if no field=value pairs found or if documents list is empty.
+        """
         if not documents:
             return []
-            
+
         available_fields = set(documents[0].keys())
         field_criteria = self.parse_query_for_fields(query, available_fields)
-        
+
         if not field_criteria:
             return []
-        
+
         return self.find_matching_documents(documents, field_criteria)
 
+
+# =============================================================================
+# RESPONSE PROCESSING - Parse LLM/context output into structured data
+# =============================================================================
+
 class ResponseProcessor:
-    """Handles response processing and data parsing"""
-    
+    """
+    Parses structured text (e.g. dimensioning context or LLM output) into a standard
+    shape: dimensioning_flavor, network_function, pods[ {pod_name, pod_flavor} ].
+    Also formats list-of-dicts back into markdown-style context strings for the LLM.
+    """
+
     def __init__(self):
         pass
-    
+
     def preprocess_df_data(self, llm_output: str) -> Dict[str, Any]:
-        """Parse LLM output to extract dimensioning data"""
+        """
+        Parse dimensioning-style text: 'Dimensioning Flavor: X', 'Network Function: Y',
+        and lines like '- DPP: flavor-name' for pods. Pod names must contain 'p' and
+        not be 'package' (to avoid matching unrelated list items).
+        """
         dimensioning_flavor = "Not Available"
         network_function = "Not Available"
         pods = []
@@ -391,11 +505,12 @@ class ResponseProcessor:
                     network_function = match.group(1).strip()
 
             else:
+                # Lines like "  - DPP: medium-uni" or "  - IPP: small"
                 match = re.match(r'\s*-\s*([A-Za-z]{2,4}):\s*(.+)', line.strip())
                 if match:
                     pod_name = match.group(1).strip()
                     pod_flavor = match.group(2).strip()
-                    
+                    # Accept DPP, DIP, DMP, CMP, PMP, RMP, IPP etc.; skip 'package'
                     if 'p' in pod_name.lower() and pod_name.lower() != 'package':
                         pods.append({
                             'pod_name': pod_name,
@@ -407,9 +522,9 @@ class ResponseProcessor:
             "network_function": network_function,
             "pods": pods
         }
-    
+
     def dict_to_context(self, data_dict_list: List[Dict], title: str = "Context Information") -> str:
-        """Convert dictionary list to context string"""
+        """Format a list of dicts as markdown (## title, ### Item N, - Key: value) for LLM context."""
         context_lines = [f"## {title}\n"]
         
         for i, data_dict in enumerate(data_dict_list, 1):
@@ -422,38 +537,48 @@ class ResponseProcessor:
         return "\n".join(context_lines)
 
 
+# =============================================================================
+# MAIN BACKEND SERVICE - Query routing, orchestration, and API for frontend
+# =============================================================================
+
 class NetTuneBackend:
-    """Main backend service for NetTune AI Pod Placement Assistant"""
-    
+    """
+    Single entry point for the Pod Placement Assistant backend.
+
+    - initialize(): Load CSVs, build QueryProcessor (must be called before process_query).
+    - process_query(): Route question to dimensioning DB, pod flavors DB, or LLM; return response dict.
+    - Session state (e.g. df_result from a previous dimensioning answer) is passed in by the frontend.
+    """
+
     def __init__(self):
         self.data_processor = DataProcessor()
-        self.query_processor = None
+        self.query_processor = None      # Set in initialize() after data is loaded
         self.response_processor = ResponseProcessor()
         self.llm = GaussLLM()
-        self.tokenizer = None
+        self.tokenizer = None             # Optional: for token counting if path provided
         self.initialized = False
-        
-        # Configuration
+
+        # Token budget (for context window); used if implementing truncation later
         self.MAX_CONTEXT_TOKENS = 32000
         self.RESERVED_FOR_RESPONSE = 1024
         self.MAX_TOKENS = 32000
         self.RESERVED_TOKENS = 1024
-    
+
     def initialize(self, tokenizer_path: Optional[str] = None) -> Dict[str, Any]:
-        """Initialize the backend service"""
+        """
+        Load CSV data, create QueryProcessor, optionally load tokenizer.
+        Must be called once before process_query; frontend typically calls this on startup.
+        """
         try:
-            # Setup tokenizer (optional)
             if tokenizer_path:
                 self._setup_tokenizer(tokenizer_path)
-            
-            # Load data
+
             df_map_list, pf_map_list = self.data_processor.load_csv_data()
-            
-            # Setup query processor
+
             self.query_processor = QueryProcessor(df_map_list, pf_map_list)
-            
+
             self.initialized = True
-            
+
             return {
                 "status": "success",
                 "message": "NetTune AI backend initialized successfully",
@@ -470,23 +595,27 @@ class NetTuneBackend:
             }
     
     def _setup_tokenizer(self, tokenizer_path: str) -> bool:
-        """Setup tokenizer for token counting"""
+        """Load HuggingFace tokenizer from path for approximate token counting (e.g. Qwen)."""
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
             return True
         except Exception as e:
             logging.warning(f"Could not load tokenizer from {tokenizer_path}: {e}")
             return False
-    
+
     def num_tokens(self, text: str) -> int:
-        """Count tokens in text"""
+        """Return token count for text if tokenizer is loaded; otherwise 0."""
         if self.tokenizer:
             tokens = self.tokenizer.encode(text)
             return len(tokens)
         return 0
     
     def route_query(self, query: str) -> str:
-        """Route query to appropriate database"""
+        """
+        Decide which data source to use: 'dimensioning', 'pod_flavors', or (caller
+        may still use LLM for 'pod placement' or fallback). Keyword-based: 'dimensioning'
+        -> dimensioning DB; 'resources' -> pod_flavors (expects df_result from prior turn).
+        """
         dfdb_keywords = ["dimensioning"]
         pfdb_keywords = ["resources"]
 
@@ -498,26 +627,35 @@ class NetTuneBackend:
             return "pod_flavors"
         else:
             return "dimensioning"
-    
+
     def process_query(self, question: str, qa_history: List[Tuple[str, str]], df_result: Optional[Dict] = None) -> Dict[str, Any]:
-        """Process user query and return response"""
+        """
+        Main entry: route question, retrieve or generate answer, return standardized dict.
+
+        Args:
+            question: User's current question.
+            qa_history: List of (user_msg, assistant_msg) for conversation context.
+            df_result: Parsed result from a previous dimensioning query (pods list etc.); needed for 'resources' flow.
+
+        Returns:
+            Dict with status, response, context_source, token_count, new_df_result (if applicable).
+        """
         if not self.initialized:
             return {
                 "status": "error",
                 "message": "Backend not initialized"
             }
-        
+
         try:
             retrieved_context = ""
             context_source = ""
             is_direct = False
             preprocess_data = False
             new_df_result = None
-            
-            # Route query
+
             chosendb = self.route_query(question)
-            
-            # Handle different query types
+
+            # --- Branch 1: Dimensioning lookup (no prior df_result) ---
             if df_result is None and chosendb == "dimensioning":
                 context_source = "📚 Dimensioning Database"
                 dimension_flavor_context = self.query_processor.extract_documents_from_query(
@@ -528,34 +666,34 @@ class NetTuneBackend:
                 if retrieved_context == "":
                     raise Exception("no such context document with given fields is available")
                 preprocess_data = True
-                new_df_result=self.response_processor.preprocess_df_data(retrieved_context)
+                new_df_result = self.response_processor.preprocess_df_data(retrieved_context)
                 is_direct = True
-                
+
+            # --- Branch 2: Pod flavor lookup using pods from previous dimensioning result ---
             elif chosendb == "pod_flavors" and df_result:
                 context_source = "🔧 Pod Flavors Database"
                 retrieved_context = self._extract_pod_flavor_info(df_result)
                 if retrieved_context == "":
                     raise Exception("no such context document with given fields is available")
                 is_direct = True
-                
+
+            # --- Branch 3: Pod placement -> DR rules file + LLM ---
             elif "pod placement" in question:
                 context_source = "⚠️ DR Rules!" + " 🤖 LLM Response"
                 retrieved_context = self._load_dr_rules()
                 if retrieved_context == "":
                     raise Exception("no such context document with given fields is available")
-                # Use LLM for DR rules queries
                 retrieved_context = self._generate_llm_response(question, qa_history, retrieved_context)
                 if new_df_result:
                     preprocess_data = True
-                
+
+            # --- Branch 4: General question -> LLM only (no structured DB) ---
             else:
-                # Use LLM for general queries
                 context_source = "🤖 LLM Response"
                 retrieved_context = self._generate_llm_response(question, qa_history, retrieved_context)
                 if new_df_result:
                     preprocess_data = True
-            
-            # Calculate token usage
+
             token_count = self.num_tokens(f"{question} {retrieved_context}")
             
             return {
@@ -575,7 +713,10 @@ class NetTuneBackend:
             }
     
     def _extract_pod_flavor_info(self, df_result: Dict) -> str:
-        """Extract pod flavor information"""
+        """
+        For each pod in df_result['pods'], look up matching row(s) in pod flavors DB
+        and return a single formatted context string with all resource details (vCPU, memory, etc.).
+        """
         res = []
         for pod in df_result['pods']:
             query = f"Pod type={pod['pod_name']},Pod flavor={pod['pod_flavor']}"
@@ -583,19 +724,22 @@ class NetTuneBackend:
                 self.data_processor.pf_map_list, query
             )
             res.extend(extracted_documents)
-        
+
         return self.response_processor.dict_to_context(res) + "\n"
-    
+
     def _load_dr_rules(self) -> str:
-        """Load DR rules from file"""
+        """Load vDU deployment rules (e.g. capacity, placement) from JSON file for LLM context."""
         try:
             with open("vdu_dr_rules.json", "r", encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
             return "DR rules file not found"
-    
-    def _generate_llm_response(self, question: str, qa_history: List[Tuple[str, str]], retrieved_context: str) -> Tuple[str, Optional[Dict]]:
-        """Generate LLM response"""
+
+    def _generate_llm_response(self, question: str, qa_history: List[Tuple[str, str]], retrieved_context: str) -> str:
+        """
+        Build system + context + history + question, call Gauss LLM, return reply text.
+        Strips any leading </think>... so the user sees only the answer.
+        """
         chat_history = "\n".join([f"Q: {q}\nA: {a}" for q, a in qa_history])
         prompt_template_text= """<s>
 [INST]
@@ -647,17 +791,15 @@ Don't give additional information.
             5. If the question relates to previous conversation, reference that history directly'''
         ]   
 
-        response= self.llm._call(contents,prompt_template_text, stop=None)
-        
+        response = self.llm._call(contents, prompt_template_text, stop=None)
+
+        # Remove </think>... wrapper if model returned one
         response = response.split("</think>", 1)[1].strip() if "</think>" in response else response
-        
-        # Check if we need to preprocess the response
-        # new_df_result = self.response_processor.preprocess_df_data(response)
-        
+
         return response
-    
+
     def get_status(self) -> Dict[str, Any]:
-        """Get backend status"""
+        """Return initialization state, tokenizer availability, and record counts for each DB."""
         return {
             "initialized": self.initialized,
             "tokenizer_available": self.tokenizer is not None,
@@ -668,18 +810,22 @@ Don't give additional information.
         }
     
     def reset_session(self) -> Dict[str, str]:
-        """Reset session data"""
+        """Called when user starts a new chat; backend does not keep conversation state itself."""
         return {
             "status": "success",
             "message": "Session reset successfully"
         }
 
 
-# Global backend instance
+# -----------------------------------------------------------------------------
+# Singleton backend - frontend imports get_backend() and uses one shared instance
+# -----------------------------------------------------------------------------
+
 backend_instance = None
 
+
 def get_backend() -> NetTuneBackend:
-    """Get or create backend instance"""
+    """Return the global NetTuneBackend instance, creating it on first call (singleton)."""
     global backend_instance
     if backend_instance is None:
         backend_instance = NetTuneBackend()
